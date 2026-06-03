@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+<title>STARWING</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{background:#000510;display:flex;flex-direction:column;align-items:center;
+  height:100dvh;overflow:hidden;user-select:none;font-family:monospace;}
+canvas{display:block;touch-action:none;flex-shrink:0;}
+
+/* ── Dashboard ── */
+#dash{width:100%;background:#00050e;border-top:1px solid #00ff8833;
+  display:flex;flex-direction:column;flex-shrink:0;}
+#instruments{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;
+  padding:6px 10px;gap:4px;border-bottom:1px solid #00ff8818;}
+.inst{display:flex;flex-direction:column;align-items:center;gap:1px;}
+.inst-label{font-size:7px;color:#00cc6699;letter-spacing:1px;}
+.inst-val{font-size:13px;font-weight:bold;}
+
+/* ── Controls row ── */
+#controls{display:flex;justify-content:space-between;align-items:center;
+  padding:8px 14px;gap:8px;}
+
+/* Thrust slider */
+#thrust-wrap{display:flex;flex-direction:column;align-items:center;gap:4px;
+  width:44px;flex-shrink:0;}
+#thrust-track{width:28px;height:90px;background:#00ff8811;border:1px solid #00ff8844;
+  border-radius:14px;position:relative;cursor:pointer;touch-action:none;}
+#thrust-fill{position:absolute;bottom:0;left:0;right:0;background:#00ff88;
+  border-radius:14px;transition:height 0.05s;pointer-events:none;}
+#thrust-knob{position:absolute;left:50%;transform:translateX(-50%);
+  width:22px;height:22px;border-radius:50%;background:#00ff88;
+  border:2px solid #00ff88cc;pointer-events:none;box-shadow:0 0 8px #00ff8866;}
+#thrust-label{font-size:8px;color:#00ff8877;letter-spacing:1px;}
+#thrust-pct{font-size:11px;color:#00ff88;font-weight:bold;}
+
+/* Center HUD */
+#center-hud{display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;}
+#fuel-bar-wrap{width:100%;display:flex;flex-direction:column;align-items:center;gap:2px;}
+#fuel-label{font-size:7px;color:#ff440099;letter-spacing:1px;}
+#fuel-bar-bg{width:90%;height:8px;background:#ff440011;border:1px solid #ff440033;border-radius:4px;overflow:hidden;}
+#fuel-bar{height:100%;background:#ff4400;border-radius:4px;width:100%;transition:width 0.1s;}
+#recal-btn{padding:5px 12px;border-radius:4px;border:1px solid #00ff8833;
+  background:rgba(0,255,136,0.04);color:#00ff8866;font-size:8px;cursor:pointer;
+  touch-action:manipulation;letter-spacing:1px;display:none;}
+#seed-label{font-size:7px;color:#00ff8822;letter-spacing:1px;}
+
+/* FIRE button */
+#fire{width:68px;height:68px;border-radius:50%;border:2px solid #ffff00;
+  background:rgba(255,255,0,0.06);display:flex;align-items:center;justify-content:center;
+  color:#ffff00;font-size:11px;font-weight:bold;letter-spacing:1px;
+  cursor:pointer;touch-action:manipulation;flex-shrink:0;}
+#fire.cooldown{border-color:#ffff0044;color:#ffff0044;}
+
+/* Attitude SVG */
+#att-wrap{width:68px;height:68px;flex-shrink:0;}
+
+/* ── Overlays ── */
+.overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(0,5,16,0.96);gap:16px;padding:28px 24px;}
+.overlay h1{color:#00ff88;font-size:20px;font-weight:bold;letter-spacing:3px;text-align:center;}
+.overlay h2{color:#00cc66;font-size:10px;letter-spacing:2px;text-align:center;}
+.overlay p{color:#00cc66;font-size:12px;text-align:center;max-width:300px;line-height:1.8;}
+.seed-txt{color:#ffff00;font-size:11px;}
+.btn-p{background:#00ff88;color:#000;border:none;padding:14px 0;border-radius:4px;
+  font-family:monospace;font-size:14px;font-weight:bold;cursor:pointer;letter-spacing:2px;
+  width:240px;min-height:52px;touch-action:manipulation;}
+.btn-s{background:transparent;color:#00ff88;border:2px solid #00ff88;padding:10px 0;
+  border-radius:4px;font-family:monospace;font-size:12px;font-weight:bold;cursor:pointer;
+  letter-spacing:2px;width:200px;min-height:44px;touch-action:manipulation;}
+.dead-col{color:#ff3344!important;}
+</style>
+</head>
+<body>
+
+<canvas id="cvs"></canvas>
+<div id="dbg" style="position:fixed;top:4px;left:4px;background:rgba(0,0,0,0.7);
+  color:#ff0;font-size:9px;padding:3px 6px;z-index:1000;pointer-events:none;
+  font-family:monospace;white-space:nowrap;"></div>
+
+<div id="dash">
+  <div id="instruments">
+    <div class="inst">
+      <span class="inst-label">VELOCIDAD</span>
+      <span class="inst-val" id="v-spd" style="color:#00ff88">0</span>
+    </div>
+    <div class="inst">
+      <span class="inst-label">THRUST</span>
+      <span class="inst-val" id="v-thr" style="color:#0af">0%</span>
+    </div>
+    <div class="inst">
+      <span class="inst-label">PUNTOS</span>
+      <span class="inst-val" id="v-score" style="color:#ffff00">0</span>
+    </div>
+    <div class="inst">
+      <span class="inst-label">BAJAS</span>
+      <span class="inst-val" id="v-kills" style="color:#ff3344">0</span>
+    </div>
+  </div>
+  <div id="controls">
+    <!-- Thrust slider (left) -->
+    <div id="thrust-wrap">
+      <span id="thrust-label">THRUST</span>
+      <div id="thrust-track">
+        <div id="thrust-fill"></div>
+        <div id="thrust-knob"></div>
+      </div>
+      <span id="thrust-pct">0%</span>
+    </div>
+
+    <!-- Center -->
+    <div id="center-hud">
+      <div id="fuel-bar-wrap">
+        <span id="fuel-label">COMBUSTIBLE</span>
+        <div id="fuel-bar-bg"><div id="fuel-bar"></div></div>
+      </div>
+      <div id="recal-btn">RECAL</div>
+      <span id="seed-label"></span>
+    </div>
+
+    <!-- FIRE (right) -->
+    <div id="fire">FIRE</div>
+  </div>
+</div>
+
+<!-- Overlays -->
+<div class="overlay" id="ov-start">
+  <h1>STARWING</h1>
+  <h2>FÍSICA ESPACIAL · GIROSCOPIO</h2>
+  <p>Inclina el teléfono para apuntar · Desliza el THRUST para acelerar · La inercia se conserva · Mata enemigos para recargar combustible</p>
+  <p class="seed-txt" id="start-seed"></p>
+  <button class="btn-p" id="btn-volar">VOLAR</button>
+  <button class="btn-s" id="btn-nuevo">CAMBIAR MUNDO</button>
+</div>
+
+<div class="overlay" id="ov-gyro" style="display:none">
+  <h1>ACTIVAR GIROSCOPIO</h1>
+  <p>Sostén el teléfono en la posición neutral de vuelo y toca el botón.</p>
+  <button class="btn-p" id="btn-gyro">ACTIVAR GIROSCOPIO</button>
+</div>
+
+<div class="overlay" id="ov-dead" style="display:none">
+  <h1 class="dead-col">SIN COMBUSTIBLE</h1>
+  <h1 id="dead-score"></h1>
+  <h2 id="dead-kills" style="color:#ff3344"></h2>
+  <button class="btn-p" id="btn-restart">NUEVO MUNDO</button>
+  <button class="btn-s" id="btn-same">MISMO MUNDO</button>
+</div>
+
+<script>
+// Global error catcher — shows JS errors on screen
+window.onerror = function(msg, src, line, col, err) {
+  const d = document.getElementById('dbg');
+  if(d) d.textContent = 'ERR L'+line+': '+msg;
+  return false;
+};
+window.onunhandledrejection = function(e) {
+  const d = document.getElementById('dbg');
+  if(d) d.textContent = 'PROMISE ERR: '+(e.reason||'unknown');
+};
+// ══════════════════════════════════════════
+// MATH
+// ══════════════════════════════════════════
+const V3={
+  add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],
+  sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],
+  scale:(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+  len:a=>Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2]),
+  norm:a=>{const l=Math.sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];},
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],
+};
+
+// Camera matrix from yaw+pitch — columns are right, up, forward
+function makeCam(yaw,pitch){
+  const cy=Math.cos(yaw),sy=Math.sin(yaw);
+  const cp=Math.cos(pitch),sp=Math.sin(pitch);
+  // forward vector: (sy*cp, -sp, cy*cp)
+  // right vector:   (cy, 0, -sy)
+  // up vector:      (sy*sp, cp, cy*sp)
+  return{
+    fwd:[sy*cp,-sp,cy*cp],
+    right:[cy,0,-sy],
+    up:[sy*sp,cp,cy*sp],
+    // 3x3 view matrix (world→camera): rows are right,up,-fwd
+    m:[cy,0,-sy,  sy*sp,cp,cy*sp,  sy*cp,-sp,cy*cp],
+  };
+}
+function txCam(m,v){return[m[0]*v[0]+m[1]*v[1]+m[2]*v[2],m[3]*v[0]+m[4]*v[1]+m[5]*v[2],m[6]*v[0]+m[7]*v[1]+m[8]*v[2]];}
+
+// ══════════════════════════════════════════
+// NOISE
+// ══════════════════════════════════════════
+function makeNoise(seed){
+  const h=(x,y)=>{let n=((x*374761393+y*668265263+seed*2246822519)>>>0);n=((n^(n>>13))*1274126177)>>>0;return(n&0xffff)/0xffff;};
+  const i2=(a,b,t)=>a+(b-a)*(t*t*(3-2*t));
+  const s=(x,y)=>{const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;return i2(i2(h(ix,iy),h(ix+1,iy),fx),i2(h(ix,iy+1),h(ix+1,iy+1),fx),fy);};
+  return(x,y,z)=>{
+    let v=0,a=1,f=1,m=0;
+    for(let i=0;i<4;i++){v+=s(x*f+z*f*0.3,y*f)*a;m+=a;a*=0.5;f*=2;}
+    return v/m;
+  };
+}
+
+// ══════════════════════════════════════════
+// AUDIO
+// ══════════════════════════════════════════
+let _ac=null;
+const getAC=()=>{if(!_ac)_ac=new(window.AudioContext||window.webkitAudioContext)();return _ac;};
+const beep=(f,d,t='square',v=0.08)=>{try{const c=getAC(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,c.currentTime);g.gain.exponentialRampToValueAtTime(0.001,c.currentTime+d);o.start();o.stop(c.currentTime+d);}catch{}};
+const SFX={
+  shoot:()=>beep(900,0.07,'square',0.06),
+  hit:()=>{beep(350,0.08,'sawtooth',0.09);setTimeout(()=>beep(200,0.12,'sawtooth',0.07),70);},
+  die:()=>{[380,280,180,90].forEach((f,i)=>setTimeout(()=>beep(f,0.18,'sawtooth',0.13),i*90));},
+  thrust:(pct)=>{if(pct>0)beep(60+pct*80,0.04,'sawtooth',pct*0.03);}
+};
+
+// ══════════════════════════════════════════
+// WORLD — asteroid/enemy fields in 3D space
+// ══════════════════════════════════════════
+function hv(x,y,z,seed){
+  let n=((x*374761+y*668265+z*234811+seed*31337)&0xffff);
+  n=((n^(n>>8))*1274127)&0xffff;
+  return n/0xffff;
+}
+
+function spawnEnemies(noise,seed,count=18){
+  const enemies=[];
+  for(let i=0;i<count;i++){
+    const h1=hv(i,0,1,seed),h2=hv(i,1,2,seed),h3=hv(i,2,3,seed);
+    const r=400+h1*800;
+    const theta=(h2*2-1)*Math.PI;
+    const phi=h3*Math.PI*2;
+    const x=r*Math.cos(theta)*Math.cos(phi);
+    const y=r*Math.sin(theta);
+    const z=r*Math.cos(theta)*Math.sin(phi);
+    enemies.push({
+      pos:[x,y,z],vel:[0,0,0],
+      hp:2,ang:0,
+      shootCd:1+hv(i,3,4,seed)*3,
+      id:`e${i}`,
+      type: hv(i,4,5,seed)<0.3?'heavy':'fighter',
+    });
+  }
+  return enemies;
+}
+
+// Asteroid belt
+function spawnAsteroids(seed,count=30){
+  const asts=[];
+  for(let i=0;i<count;i++){
+    const h1=hv(i,10,11,seed),h2=hv(i,11,12,seed),h3=hv(i,12,13,seed);
+    const r=300+h1*600;
+    const theta=(h2*2-1)*Math.PI;
+    const phi=h3*Math.PI*2;
+    asts.push({
+      pos:[r*Math.cos(theta)*Math.cos(phi),r*Math.sin(theta),r*Math.cos(theta)*Math.sin(phi)],
+      size:8+hv(i,14,15,seed)*24,
+      rot:hv(i,15,16,seed)*Math.PI*2,
+      rotSpeed:(hv(i,16,17,seed)-0.5)*0.5,
+      id:`a${i}`,alive:true,
+    });
+  }
+  return asts;
+}
+
+// ══════════════════════════════════════════
+// GEOMETRY
+// ══════════════════════════════════════════
+function fighterGeo(pos,fwd,right,up,size=12){
+  const[x,y,z]=pos;
+  const f=V3.scale(fwd,size),r=V3.scale(right,size*0.7),u=V3.scale(up,size*0.4);
+  const nose=V3.add(pos,f);
+  const tail=V3.sub(pos,V3.scale(fwd,size*0.6));
+  const wl=V3.add(tail,V3.scale(right,-size*1.1));
+  const wr=V3.add(tail,V3.scale(right, size*1.1));
+  const top=V3.add(tail,V3.scale(up,size*0.5));
+  return[{a:nose,b:wl},{a:nose,b:wr},{a:wl,b:wr},{a:nose,b:top},{a:wl,b:top},{a:wr,b:top}];
+}
+
+function heavyGeo(pos,ang,size=18){
+  const lines=[];
+  const steps=6;
+  for(let i=0;i<steps;i++){
+    const a0=ang+i/steps*Math.PI*2, a1=ang+(i+1)/steps*Math.PI*2;
+    lines.push({
+      a:[pos[0]+Math.cos(a0)*size,pos[1]+Math.sin(a0)*size*0.5,pos[2]+Math.sin(a0)*size],
+      b:[pos[0]+Math.cos(a1)*size,pos[1]+Math.sin(a1)*size*0.5,pos[2]+Math.sin(a1)*size],
+    });
+  }
+  lines.push({a:[pos[0],pos[1]-size*0.8,pos[2]],b:[pos[0]+Math.cos(ang)*size,pos[1]+Math.sin(ang)*size*0.5,pos[2]+Math.sin(ang)*size]});
+  return lines;
+}
+
+function asteroidGeo(pos,size,rot){
+  const lines=[];
+  const verts=7;
+  const pts=[];
+  for(let i=0;i<verts;i++){
+    const a=rot+i/verts*Math.PI*2;
+    const r=size*(0.7+((i*373+rot*100)&0xff)/0xff*0.6);
+    pts.push([pos[0]+Math.cos(a)*r,pos[1]+Math.sin(a)*r*0.6,pos[2]+Math.sin(a)*r]);
+  }
+  for(let i=0;i<verts;i++)lines.push({a:pts[i],b:pts[(i+1)%verts]});
+  return lines;
+}
+
+// ══════════════════════════════════════════
+// PROJECTION
+// ══════════════════════════════════════════
+function project(pt,camPos,camM,W,H,FOV){
+  const r=V3.sub(pt,camPos);
+  // Transform: row0=right, row1=up, row2=fwd
+  const rx=camM[0]*r[0]+camM[1]*r[1]+camM[2]*r[2];
+  const ry=camM[3]*r[0]+camM[4]*r[1]+camM[5]*r[2];
+  const rz=camM[6]*r[0]+camM[7]*r[1]+camM[8]*r[2];
+  if(rz<=0.5)return null;
+  return[W/2+(rx/rz)*FOV, H/2-(ry/rz)*FOV, rz];
+}
+
+// ══════════════════════════════════════════
+// COCKPIT HUD
+// ══════════════════════════════════════════
+function drawCockpit(ctx,W,H,shootCd,thrustPct,vel){
+  const cx=W/2,cy=H/2;
+  ctx.save();
+
+  // Frame struts
+  ctx.strokeStyle='#00ff88';ctx.lineWidth=1.8;ctx.globalAlpha=0.7;
+  ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(W*0.18,H*0.75);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(0,H*0.2);ctx.lineTo(W*0.14,H*0.75);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(W,0);ctx.lineTo(W*0.82,H*0.75);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(W,H*0.2);ctx.lineTo(W*0.86,H*0.75);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(W*0.18,H*0.75);ctx.lineTo(W*0.82,H*0.75);ctx.stroke();
+  // Top arch
+  ctx.globalAlpha=0.35;ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(W*0.06,0);ctx.quadraticCurveTo(cx,H*0.06,W*0.94,0);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,0);ctx.lineTo(cx,H*0.75);ctx.stroke();
+
+  // Crosshair — color shifts with thrust
+  ctx.globalAlpha=1;
+  const thrColor=thrustPct>0?`hsl(${120-thrustPct*1.2},100%,60%)`:'#0ff';
+  ctx.strokeStyle=shootCd>0?'#ff4':thrColor;
+  ctx.lineWidth=1.5;
+  const g=14;
+  ctx.beginPath();ctx.moveTo(cx-g*2.5,cy);ctx.lineTo(cx-g*0.6,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx+g*0.6,cy);ctx.lineTo(cx+g*2.5,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy-g*2.5);ctx.lineTo(cx,cy-g*0.6);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy+g*0.6);ctx.lineTo(cx,cy+g*2.5);ctx.stroke();
+  ctx.strokeRect(cx-g*0.5,cy-g*0.5,g,g);
+
+  // Velocity vector indicator (small arrow showing actual travel direction)
+  const spd=V3.len(vel);
+  if(spd>2){
+    // project velocity direction into screen
+    ctx.strokeStyle='#ff4';ctx.globalAlpha=0.6;ctx.lineWidth=1;
+    const vx=vel[0]/spd,vy=vel[1]/spd;
+    const dx=vx*30,dy=-vy*30;
+    ctx.beginPath();ctx.moveTo(cx+dx-4,cy+dy);ctx.lineTo(cx+dx+4,cy+dy);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx+dx,cy+dy-4);ctx.lineTo(cx+dx,cy+dy+4);ctx.stroke();
+  }
+
+  // Thrust flame indicator (bottom center)
+  if(thrustPct>0){
+    ctx.globalAlpha=thrustPct/100*0.8;
+    ctx.strokeStyle='#0af';ctx.lineWidth=1.5;
+    const fw=20*thrustPct/100;
+    ctx.beginPath();ctx.moveTo(cx-fw,H*0.74);ctx.lineTo(cx,H*0.74+fw*0.5);ctx.lineTo(cx+fw,H*0.74);ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════
+// CANVAS & STATE
+// ══════════════════════════════════════════
+const canvas=document.getElementById('cvs');
+const ctx=canvas.getContext('2d');
+let W,H,FOV;
+
+function resize(){
+  const dashH=document.getElementById('dash').offsetHeight||130;
+  W=window.innerWidth;
+  H=window.innerHeight-dashH;
+  canvas.width=W;canvas.height=H;
+  FOV=Math.min(W,H)*1.4;
+}
+
+let S=null,raf=null,lt=null,fr=0;
+const gyro={beta:0,gamma:0,baseB:0,baseG:0,ready:false};
+let thrustPct=0;       // 0–100
+let currentSeed=Math.floor(Math.random()*99999);
+
+const MAX_FUEL=100;
+const FUEL_PER_KILL=25;
+const FUEL_DRAIN=0.8;  // per second at full thrust
+
+function initWorld(seed){
+  const noise=makeNoise(seed);
+  S={
+    noise,seed,
+    pos:[0,0,0],
+    vel:[0,0,0],           // velocity vector, conserved
+    yaw:0,pitch:0,         // ship orientation
+    enemies:spawnEnemies(noise,seed,20),
+    asteroids:spawnAsteroids(seed,25),
+    bullets:[],eBullets:[],explosions:[],
+    score:0,kills:0,
+    shootCd:0,
+    fuel:MAX_FUEL,
+    dead:false,
+    stars:Array.from({length:200},(_,i)=>{
+      const h1=hv(i,20,21,seed),h2=hv(i,21,22,seed),h3=hv(i,22,23,seed);
+      const r=1200+h1*800;
+      const theta=(h2*2-1)*Math.PI, phi=h3*Math.PI*2;
+      return[r*Math.cos(theta)*Math.cos(phi),r*Math.sin(theta),r*Math.cos(theta)*Math.sin(phi)];
+    }),
+  };
+}
+
+// ══════════════════════════════════════════
+// DRAW
+// ══════════════════════════════════════════
+function draw(){
+  if(!S)return;
+  ctx.fillStyle='#000510';ctx.fillRect(0,0,W,H);
+
+  const cam=makeCam(S.yaw,S.pitch);
+  // View matrix rows: right, up, forward(into screen)
+  const VM=[
+    cam.right[0],cam.right[1],cam.right[2],
+    cam.up[0],   cam.up[1],   cam.up[2],
+    cam.fwd[0],  cam.fwd[1],  cam.fwd[2],
+  ];
+  const prj=pt=>project(pt,S.pos,VM,W,H,FOV);
+
+  const segs=[];
+
+  // Stars
+  S.stars.forEach(st=>{
+    const p=prj(st);
+    if(p&&p[2]<2200)segs.push({dot:true,pos:st,col:'rgba(255,255,255,0.6)',r:1,depth:p[2],p});
+  });
+
+  // Asteroids
+  S.asteroids.filter(a=>a.alive).forEach(a=>{
+    const dist=V3.len(V3.sub(a.pos,S.pos));
+    if(dist>1400)return;
+    asteroidGeo(a.pos,a.size,a.rot).forEach(l=>segs.push({...l,col:'#886633'}));
+  });
+
+  // Enemies
+  S.enemies.filter(e=>e.hp>0).forEach(e=>{
+    const dist=V3.len(V3.sub(e.pos,S.pos));
+    if(dist>1200)return;
+    const ec=makeCam(e.ang,e.ang*0.3);
+    if(e.type==='heavy'){
+      heavyGeo(e.pos,e.ang,18).forEach(l=>segs.push({...l,col:'#ff0055'}));
+    } else {
+      fighterGeo(e.pos,ec.fwd,ec.right,ec.up,12).forEach(l=>segs.push({...l,col:'#ff3300'}));
+    }
+    // HP indicator dot above enemy
+    const above=V3.add(e.pos,[0,30,0]);
+    segs.push({dot:true,pos:above,col:e.hp===2?'#ff0':'#f80',r:3});
+  });
+
+  // Bullets
+  S.bullets.forEach(b=>segs.push({dot:true,pos:b.pos,col:'#ffff00',r:2.5}));
+  S.eBullets.forEach(b=>segs.push({dot:true,pos:b.pos,col:'#ff4400',r:2}));
+
+  // Explosions
+  S.explosions.forEach(ex=>{
+    const t=1-ex.life/ex.maxLife,rad=t*50,al=ex.life/ex.maxLife;
+    for(let i=0;i<12;i++){
+      const a=i/12*Math.PI*2+t*5;
+      segs.push({dot:true,
+        pos:V3.add(ex.pos,[Math.cos(a)*rad,Math.sin(a)*rad*0.7,Math.sin(a+1)*rad]),
+        col:`rgba(255,${Math.floor(160*al)},0,${al.toFixed(2)})`,r:2});
+    }
+  });
+
+  // Project + sort
+  const vis=[];
+  segs.forEach(sg=>{
+    if(sg.dot){
+      if(sg.p){vis.push({...sg,depth:sg.p[2]});}
+      else{const p=prj(sg.pos);if(p)vis.push({...sg,p,depth:p[2]});}
+    } else {
+      const pa=prj(sg.a),pb=prj(sg.b);
+      if(pa&&pb)vis.push({...sg,pa,pb,depth:(pa[2]+pb[2])/2});
+    }
+  });
+  vis.sort((a,b)=>b.depth-a.depth);
+
+  vis.forEach(sg=>{
+    const fog=sg.depth>1000?Math.max(0.05,1-(sg.depth-1000)/600):1;
+    ctx.globalAlpha=fog;
+    if(sg.dot){
+      ctx.fillStyle=sg.col;
+      ctx.beginPath();ctx.arc(sg.p[0],sg.p[1],sg.r,0,Math.PI*2);ctx.fill();
+    } else {
+      ctx.strokeStyle=sg.col;
+      ctx.lineWidth=sg.depth<100?2:1;
+      ctx.beginPath();ctx.moveTo(sg.pa[0],sg.pa[1]);ctx.lineTo(sg.pb[0],sg.pb[1]);ctx.stroke();
+    }
+  });
+  ctx.globalAlpha=1;
+
+  drawCockpit(ctx,W,H,S.shootCd,thrustPct,S.vel);
+
+  // Radar — tiny dots in top-right showing relative enemy positions
+  const rX=W-48,rY=48,rR=38;
+  ctx.strokeStyle='#00ff8833';ctx.lineWidth=1;
+  ctx.beginPath();ctx.arc(rX,rY,rR,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(rX-rR,rY);ctx.lineTo(rX+rR,rY);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(rX,rY-rR);ctx.lineTo(rX,rY+rR);ctx.stroke();
+  S.enemies.filter(e=>e.hp>0).forEach(e=>{
+    const rel=V3.sub(e.pos,S.pos);
+    // project onto right/up of camera
+    const rx2=V3.dot(rel,cam.right);
+    const ry2=V3.dot(rel,cam.up);
+    const rz2=V3.dot(rel,cam.fwd);
+    const dist=V3.len(rel);
+    if(dist>1200)return;
+    const scale=rR/400;
+    const dx=rx2*scale,dy=-ry2*scale;
+    const inFront=rz2>0;
+    ctx.fillStyle=inFront?'#ff3300':'#ff330066';
+    ctx.beginPath();ctx.arc(rX+Math.max(-rR+3,Math.min(rR-3,dx)),rY+Math.max(-rR+3,Math.min(rR-3,dy)),3,0,Math.PI*2);ctx.fill();
+  });
+}
+
+// ══════════════════════════════════════════
+// TICK
+// ══════════════════════════════════════════
+function tick(ts){
+  if(!S||S.dead)return;
+  if(lt===null)lt=ts;
+  const dt=Math.min((ts-lt)/1000,0.05);
+  lt=ts;fr++;
+
+  // ── Gyro → ship orientation ──────────────
+  if(gyro.ready){
+    const dG=gyro.gamma-gyro.baseG;  // side tilt → yaw
+    const dB=gyro.beta-gyro.baseB;   // fwd/back  → pitch
+    const tY=dG*(Math.PI/180)*0.9;
+    const tP=dB*(Math.PI/180)*0.7;
+    const sm=Math.min(1,6*dt);
+    S.yaw  +=(tY-S.yaw)  *sm;
+    S.pitch+=(tP-S.pitch)*sm;
+    S.pitch=Math.max(-Math.PI*0.48,Math.min(Math.PI*0.48,S.pitch));
+  }
+
+  // ── Thrust → accelerate in facing direction ──
+  const cam=makeCam(S.yaw,S.pitch);
+  const thr=thrustPct/100;
+  const MAX_ACCEL=120; // units/s²
+  if(thr>0){
+    const accel=V3.scale(cam.fwd,MAX_ACCEL*thr*dt);
+    S.vel=V3.add(S.vel,accel);
+    if(fr%10===0)SFX.thrust(thrustPct);
+  }
+
+  // Speed cap (optional, feels better with one)
+  const spd=V3.len(S.vel);
+  const MAX_SPD=300;
+  if(spd>MAX_SPD)S.vel=V3.scale(S.vel,MAX_SPD/spd);
+
+  // ── Move ──────────────────────────────────
+  S.pos=V3.add(S.pos,V3.scale(S.vel,dt));
+
+  // ── Fuel ──────────────────────────────────
+  S.fuel-=thr*FUEL_DRAIN*dt;
+  S.fuel=Math.max(0,S.fuel);
+  if(S.fuel<=0&&thr===0&&fr%60===0){
+    // no fuel and coasting is fine — only die if out of fuel AND enemies kill you
+    // actually: out of fuel = game over (no thrust = sitting duck, narrative choice)
+    SFX.die();S.dead=true;showDead();return;
+  }
+  if(S.fuel<=0){S.fuel=0;}
+
+  // ── Bullets ───────────────────────────────
+  S.shootCd=Math.max(0,S.shootCd-dt);
+  S.bullets=S.bullets.filter(b=>b.life>0);
+  S.bullets.forEach(b=>{b.pos=V3.add(b.pos,V3.scale(b.vel,dt));b.life-=dt;});
+  S.eBullets=S.eBullets.filter(b=>b.life>0);
+  S.eBullets.forEach(b=>{b.pos=V3.add(b.pos,V3.scale(b.vel,dt));b.life-=dt;});
+
+  // ── Enemies ───────────────────────────────
+  S.enemies=S.enemies.filter(e=>e.hp>0);
+  S.enemies.forEach(e=>{
+    const toP=V3.sub(S.pos,e.pos);
+    const dist=V3.len(toP);
+    if(dist>1000)return;
+
+    e.ang+=dt*(e.type==='heavy'?0.6:1.4);
+
+    // Chase behavior
+    const dir=V3.norm(toP);
+    const chaseAccel=e.type==='heavy'?18:35;
+    e.vel=V3.add(V3.scale(e.vel||[0,0,0],0.97),V3.scale(dir,chaseAccel*dt));
+    e.pos=V3.add(e.pos,V3.scale(e.vel,dt));
+
+    // Shoot at player
+    e.shootCd-=dt;
+    if(e.shootCd<=0&&dist<500){
+      e.shootCd=(e.type==='heavy'?2.5:1.2)+Math.random()*1.5;
+      // lead-aim: add velocity compensation
+      const bulletSpd=180;
+      const leadDir=V3.norm(V3.add(toP,V3.scale(S.vel,dist/bulletSpd*0.4)));
+      S.eBullets.push({pos:[...e.pos],vel:V3.scale(leadDir,bulletSpd),life:4});
+    }
+
+    // Player bullets hit enemy
+    S.bullets.forEach(b=>{
+      const hitR=e.type==='heavy'?22:16;
+      if(V3.len(V3.sub(b.pos,e.pos))<hitR){
+        b.life=0;e.hp--;
+        S.explosions.push({pos:[...e.pos],life:0.7,maxLife:0.7});
+        SFX.hit();
+        if(e.hp<=0){
+          S.score+=e.type==='heavy'?300:100;
+          S.kills++;
+          S.fuel=Math.min(MAX_FUEL,S.fuel+FUEL_PER_KILL);
+        }
+      }
+    });
+  });
+
+  // Asteroids — bullet hits
+  S.asteroids.filter(a=>a.alive).forEach(a=>{
+    a.rot+=a.rotSpeed*dt;
+    S.bullets.forEach(b=>{
+      if(V3.len(V3.sub(b.pos,a.pos))<a.size){
+        b.life=0;a.alive=false;
+        S.explosions.push({pos:[...a.pos],life:0.5,maxLife:0.5});
+        S.score+=20;
+      }
+    });
+  });
+
+  // Enemy bullets hit player
+  for(const b of S.eBullets){
+    if(V3.len(V3.sub(b.pos,S.pos))<14){
+      b.life=0;
+      S.fuel=Math.max(0,S.fuel-20);
+      SFX.hit();
+      if(S.fuel<=0){SFX.die();S.dead=true;showDead();return;}
+    }
+  }
+
+  // Collide with asteroids
+  for(const a of S.asteroids){
+    if(!a.alive)continue;
+    if(V3.len(V3.sub(a.pos,S.pos))<a.size+8){
+      SFX.die();S.dead=true;showDead();return;
+    }
+  }
+
+  S.explosions=S.explosions.filter(e=>e.life>0);
+  S.explosions.forEach(e=>e.life-=dt);
+
+  // ── UI updates ────────────────────────────
+  if(fr%6===0){
+    const spd2=Math.floor(V3.len(S.vel));
+    document.getElementById('v-spd').textContent=spd2;
+    document.getElementById('v-thr').textContent=thrustPct+'%';
+    document.getElementById('v-score').textContent=S.score;
+    document.getElementById('v-kills').textContent=S.kills;
+    document.getElementById('fuel-bar').style.width=(S.fuel/MAX_FUEL*100)+'%';
+    document.getElementById('fuel-bar').style.background=
+      S.fuel>50?'#ff4400':S.fuel>25?'#ff8800':'#ff0000';
+    // Attitude indicator
+    const hOff=36+Math.min(22,S.pitch*(180/Math.PI)*0.45);
+    document.getElementById('horizon-line').setAttribute('y1',hOff);
+    document.getElementById('horizon-line').setAttribute('y2',hOff);
+  }
+
+  // Debug: show gyro values on screen
+  if(fr%30===0){
+    const dbg=document.getElementById('dbg');
+    if(dbg) dbg.textContent=
+      'β:'+(gyro.beta).toFixed(1)+' Δβ:'+(gyro.beta-gyro.baseB).toFixed(1)+
+      ' γ:'+(gyro.gamma).toFixed(1)+' Δγ:'+(gyro.gamma-gyro.baseG).toFixed(1)+
+      ' R:'+gyro.ready+
+      ' y:'+(S.yaw*(180/Math.PI)).toFixed(0)+
+      ' p:'+(S.pitch*(180/Math.PI)).toFixed(0);
+  }
+
+  draw();
+  raf=requestAnimationFrame(tick);
+}
+
+function startLoop(){lt=null;raf=requestAnimationFrame(tick);}
+function stopLoop(){if(raf){cancelAnimationFrame(raf);raf=null;}}
+
+// ══════════════════════════════════════════
+// SHOOT
+// ══════════════════════════════════════════
+function shoot(){
+  if(!S||S.dead||S.shootCd>0)return;
+  S.shootCd=0.18;SFX.shoot();
+  const cam=makeCam(S.yaw,S.pitch);
+  const bulletVel=V3.add(V3.scale(cam.fwd,320),S.vel);
+  [-1,1].forEach(side=>{
+    const off=V3.scale(cam.right,side*7);
+    S.bullets.push({pos:V3.add(V3.add(S.pos,V3.scale(cam.fwd,12)),off),vel:bulletVel,life:2});
+  });
+}
+
+// ══════════════════════════════════════════
+// THRUST SLIDER
+// ══════════════════════════════════════════
+const track=document.getElementById('thrust-track');
+const fill=document.getElementById('thrust-fill');
+const knob=document.getElementById('thrust-knob');
+const pctLabel=document.getElementById('thrust-pct');
+const vThr=document.getElementById('v-thr');
+
+function setThrust(pct){
+  thrustPct=Math.max(0,Math.min(100,Math.round(pct)));
+  const trackH=track.offsetHeight;
+  const knobH=knob.offsetHeight;
+  const usable=trackH-knobH;
+  const yFromBottom=thrustPct/100*usable;
+  fill.style.height=(thrustPct/100*trackH)+'px';
+  knob.style.bottom=(yFromBottom)+'px';
+  pctLabel.textContent=thrustPct+'%';
+}
+
+function thrustFromY(clientY){
+  const rect=track.getBoundingClientRect();
+  const y=clientY-rect.top;
+  const pct=(1-y/rect.height)*100;
+  setThrust(pct);
+}
+
+track.addEventListener('touchstart',e=>{e.preventDefault();thrustFromY(e.touches[0].clientY);},{passive:false});
+track.addEventListener('touchmove',e=>{e.preventDefault();thrustFromY(e.touches[0].clientY);},{passive:false});
+track.addEventListener('touchend',e=>{e.preventDefault();},{passive:false});
+track.addEventListener('mousedown',e=>{thrustFromY(e.clientY);
+  const mm=e2=>{thrustFromY(e2.clientY);};
+  window.addEventListener('mousemove',mm);
+  window.addEventListener('mouseup',()=>window.removeEventListener('mousemove',mm),{once:true});
+});
+setThrust(0);
+
+// ══════════════════════════════════════════
+// GYRO
+// ══════════════════════════════════════════
+function recalibrate(){
+  gyro.baseB=gyro.beta;
+  gyro.baseG=gyro.gamma;
+}
+
+// Called AFTER permission granted — registers listener then calibrates
+function startGyroListener(){
+  window.addEventListener('deviceorientation', function(e){
+    if(e.beta  !== null) gyro.beta  = e.beta;
+    if(e.gamma !== null) gyro.gamma = e.gamma;
+    if(!gyro.ready){
+      // First event received — auto-calibrate
+      gyro.baseB=gyro.beta;
+      gyro.baseG=gyro.gamma;
+      gyro.ready=true;
+    }
+  });
+}
+
+async function activateGyro(){
+  try{
+    if(typeof DeviceOrientationEvent!=='undefined' &&
+       typeof DeviceOrientationEvent.requestPermission==='function'){
+      const r=await DeviceOrientationEvent.requestPermission();
+      if(r!=='granted'){alert('Permiso denegado');return false;}
+    }
+    startGyroListener();
+    return true;
+  }catch(e){alert('Error: '+e.message);return false;}
+}
+
+// ══════════════════════════════════════════
+// SCREEN MANAGEMENT
+// ══════════════════════════════════════════
+function showScreen(id){
+  ['ov-start','ov-gyro','ov-dead'].forEach(s=>document.getElementById(s).style.display='none');
+  if(id)document.getElementById(id).style.display='flex';
+  document.getElementById('recal-btn').style.display=id?'none':'block';
+}
+
+function showDead(){
+  stopLoop();thrustPct=0;setThrust(0);
+  document.getElementById('dead-score').textContent='★ '+S.score;
+  document.getElementById('dead-kills').textContent='BAJAS: '+S.kills;
+  showScreen('ov-dead');
+}
+
+const needsPermission=typeof DeviceOrientationEvent!=='undefined'&&
+  typeof DeviceOrientationEvent.requestPermission==='function';
+
+async function doStart(){
+  initWorld(currentSeed);
+  document.getElementById('seed-label').textContent='SEED #'+currentSeed;
+  if(!gyro.ready){
+    // Always request gyro — on iOS needs permission, on others just starts
+    showScreen('ov-gyro');
+  } else {
+    recalibrate();
+    showScreen(null);
+    startLoop();
+  }
+}
+
+// ══════════════════════════════════════════
+// EVENT BINDINGS
+// ══════════════════════════════════════════
+document.getElementById('btn-volar').addEventListener('click',doStart);
+document.getElementById('btn-nuevo').addEventListener('click',()=>{
+  currentSeed=Math.floor(Math.random()*99999);
+  document.getElementById('start-seed').textContent='Mundo #'+currentSeed;
+});
+document.getElementById('btn-gyro').addEventListener('click',async()=>{
+  const ok=await activateGyro();
+  if(ok){
+    // Wait for first sensor event (auto-calibrates), then start
+    const waitForGyro=setInterval(()=>{
+      if(gyro.ready){ clearInterval(waitForGyro); showScreen(null); startLoop(); }
+    },100);
+    // Fallback: start after 2s even if no events
+    setTimeout(()=>{ clearInterval(waitForGyro); if(!gyro.ready){gyro.ready=true;} showScreen(null); if(!raf)startLoop(); },2000);
+  }
+});
+document.getElementById('btn-restart').addEventListener('click',()=>{
+  currentSeed=Math.floor(Math.random()*99999);
+  document.getElementById('start-seed').textContent='Mundo #'+currentSeed;
+  initWorld(currentSeed);
+  recalibrate();
+  showScreen(null);
+  startLoop();
+});
+document.getElementById('btn-same').addEventListener('click',()=>{
+  initWorld(currentSeed);recalibrate();showScreen(null);startLoop();
+});
+
+const fireEl=document.getElementById('fire');
+fireEl.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();shoot();},{passive:false});
+fireEl.addEventListener('touchend',e=>{e.preventDefault();e.stopPropagation();},{passive:false});
+fireEl.addEventListener('pointerdown',e=>{e.preventDefault();shoot();});
+fireEl.addEventListener('click',e=>{e.preventDefault();shoot();});
+
+document.getElementById('recal-btn').addEventListener('touchstart',e=>{e.preventDefault();recalibrate();},{passive:false});
+document.getElementById('recal-btn').addEventListener('click',recalibrate);
+
+// ══════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════
+document.getElementById('start-seed').textContent='Mundo #'+currentSeed;
+document.getElementById('seed-label').textContent='SEED #'+currentSeed;
+resize();
+window.addEventListener('resize',()=>{resize();draw();});
+// Immediate debug — confirm JS is running
+document.getElementById('dbg').textContent = 'JS OK - esperando gyro';
+</script>
+</body>
+</html>
