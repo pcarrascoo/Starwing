@@ -35,6 +35,11 @@
   .param .val { font-size: 13px; font-weight: bold; color: #ccc; text-align: center; }
   .param input[type=range] { width: 100%; accent-color: #3a7bd5; cursor: pointer; }
 
+  /* En mobile el overlay se dibuja en el canvas — ocultar el HTML */
+  @media (pointer: coarse) {
+    #overlay.show { display: none !important; }
+  }
+
   /* Mobile landscape — canvas llena la pantalla, UI sobre el canvas */
   @media (pointer: coarse) and (orientation: landscape) {
     body { padding: 0; margin: 0; background: #000; justify-content: center; align-items: center; }
